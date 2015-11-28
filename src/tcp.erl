@@ -15,36 +15,46 @@ start_server(Port) ->
 acceptor(ListenSocket) ->
   {ok, Socket} = gen_tcp:accept(ListenSocket),
   spawn(fun() -> acceptor(ListenSocket) end),
-  handle(Socket).
+  PlayerPid = player:create(Socket),
+  handle(Socket, PlayerPid).
 
-handle(Socket) ->
+handle(Socket, PlayerPid) ->
   inet:setopts(Socket, [{active, once}]),
   receive
     {tcp, Socket, <<"quit", _/binary>>} ->
-      gen_tcp:close(Socket);
+      gen_tcp:close(Socket),
+      player:stop(PlayerPid);
     {tcp, Socket, <<"\r\n", _binary>>} ->
-      handle(Socket);
+      handle(Socket, PlayerPid);
     {tcp, Socket, Binary} ->
       String = erlang:binary_to_list(Binary),
       Tokens = string:tokens(String, ?SEP),
-      case handle_command(Socket, Tokens) of
+      case handle_command(Socket, PlayerPid, Tokens) of
         ok ->
           gen_tcp:send(Socket, "-OK\n");
         error ->
           gen_tcp:send(Socket, "-ERROR\n")
       end,
-      handle(Socket)
+      handle(Socket, PlayerPid)
   end.
 
-handle_command(Socket, [Command, PlayerName | _Args]) when Command =:= "register" ->
-  player:register({PlayerName, Socket}),
+handle_command(_, PlayerPid, [Command, PlayerName | _Args]) when Command =:= "signin" ->
+  player:signin(PlayerPid, PlayerName),
   ok;
 
-handle_command(_, [Command, OtherPlayerName | Args]) when Command =:= "send" ->
-  player:send_command(OtherPlayerName, Args),
+handle_command(_, PlayerPid, [Command, MatchName | _Args]) when Command =:= "create" ->
+  player:create_match(PlayerPid, MatchName),
   ok;
 
-handle_command(_, _) ->
+handle_command(_, PlayerPid, [Command, MatchName | _Args]) when Command =:= "join" ->
+  player:join(PlayerPid, MatchName),
+  ok;
+
+handle_command(_, PlayerPid, [Command | Args]) when Command =:= "send" ->
+  player:send_command(PlayerPid, string:join(Args, ?SEP)),
+  ok;
+
+handle_command(_, _, _) ->
   io:format("Unknown message~n"),
   error.
 
