@@ -5,6 +5,9 @@ create(MatchName, OwnerName, OwnerPid) ->
   util:start(MatchName, {match, route_messages, [MatchName, dict:new()]}),
   join(MatchName, OwnerName, OwnerPid).
 
+exists(MatchName) ->
+  global:whereis_name(MatchName).
+
 join(MatchName, PlayerName, PlayerPid) ->
   global:send(MatchName, {join, PlayerName, PlayerPid}).
 

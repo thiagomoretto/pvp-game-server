@@ -15,7 +15,8 @@ start_server(Port) ->
 acceptor(ListenSocket) ->
   {ok, Socket} = gen_tcp:accept(ListenSocket),
   spawn(fun() -> acceptor(ListenSocket) end),
-  PlayerPid = player:create(Socket),
+  ReplyFun = fun(Message) -> reply(Socket, Message) end,
+  PlayerPid = player:create(ReplyFun),
   handle(Socket, PlayerPid).
 
 handle(Socket, PlayerPid) ->
@@ -57,6 +58,9 @@ handle_command(_, PlayerPid, [Command | Args]) when Command =:= "send" ->
 handle_command(_, _, _) ->
   io:format("Unknown message~n"),
   error.
+
+reply(Socket, Atom) when erlang:is_atom(Atom) ->
+  gen_tcp:send(Socket, erlang:atom_to_list(Atom));
 
 reply(Socket, Message) ->
   io:format("<< message ~p~n", [Message]),

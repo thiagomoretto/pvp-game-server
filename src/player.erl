@@ -1,8 +1,9 @@
 -module(player).
 -compile(export_all).
+-include_lib("eunit/include/eunit.hrl").
 
-create(Socket) ->
-  Player = {unidentified, Socket},
+create(ReplyFun) ->
+  Player = {unidentified, ReplyFun},
   Pid = spawn_link(player, handle_player_commands, [Player, none]),
   io:format("player created with pid ~p~n", [Pid]),
   Pid.
@@ -20,30 +21,41 @@ send_command(PlayerPid, Command) ->
   PlayerPid ! {send, Command}.
 
 handle_player_commands(Player, MatchName) ->
-  {PlayerName, Socket} = Player,
+  {PlayerName, ReplyFun} = Player,
   receive
     {signin, NewPlayerName} ->
-      handle_player_commands({NewPlayerName, Socket}, MatchName);
+      handle_player_commands({NewPlayerName, ReplyFun}, MatchName);
     {create, NewMatchName} ->
-      % TODO:
-      match:create(NewMatchName, PlayerName, self()),
+      case match:exists(NewMatchName) of
+        undefined ->
+          match:create(NewMatchName, PlayerName, self()),
+          ReplyFun(match_created);
+        _ ->
+          ReplyFun(match_already_exists)
+      end,
       handle_player_commands(Player, NewMatchName);
     {join, NewMatchName} ->
-      % TODO:
-      match:join(NewMatchName, PlayerName, self()),
+      case match:exists(NewMatchName) of
+        undefined ->
+          ReplyFun(match_does_not_exists);
+        _ ->
+          match:join(NewMatchName, PlayerName, self())
+      end,
       handle_player_commands(Player, NewMatchName);
     {send, Command} ->
-      % TODO:
-      io:format("send message ~p to match ~p~n", [Command, MatchName]),
-      match:send(MatchName, PlayerName, Command),
+      case match:exists(MatchName) of
+        undefined ->
+          ReplyFun(match_does_not_exists);
+        _ ->
+          match:send(MatchName, PlayerName, Command)
+      end,
       handle_player_commands(Player, MatchName);
-    {recv, From, Command} ->
-      io:format("~p sent ~p~n", [From, Command]),
-      tcp:reply(Socket, Command),
+    {recv, _From, Command} ->
+      ReplyFun(Command),
       handle_player_commands(Player, MatchName);
     % TODO: Handle EXIT signals.
     {joined, PlayerName} ->
-      tcp:reply(Socket, string:join(["joined", PlayerName], ";")),
+      ReplyFun(string:join(["joined", PlayerName], ";")),
       handle_player_commands(Player, MatchName);
     stop ->
       ok;
